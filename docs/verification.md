@@ -1,5 +1,19 @@
 # Verification receipts and limits
 
+## Gateway follow-up (0.2.0)
+
+Implemented after PR1 merged as `f5cce5a806374e27e7ddc62b2ca413f52972f9af` on fresh branch `feat/native-gateway-lifecycle`. Earlier receipts below describe the historical foreground artifact, not gateway proof.
+
+The official adding-platform-adapters documentation and installed Hermes 0.21 source confirm `ctx.register_platform(adapter_factory=...)`, `BasePlatformAdapter.connect(is_reconnect=...)` and `disconnect()`. The host loader merges `gateway.platforms` and top-level `platforms`; configuration uses the supported host CLI to enable `platforms.katafit.enabled`, preserving unrelated settings. A standalone manifest intentionally retains eager native CLI registration while importing the adapter lazily.
+
+`scripts/verify_host.py` now executes `scripts/verify_gateway.py` in its disposable HOME after native configure/PTY checks. The real host discovers the installed plugin, loads the saved enabled platform, and executes **GatewayRunner.start()**, native registry factory, connect aggregation, and **GatewayRunner.stop()**. Synthetic MCP HTTP transport and the provider I/O boundary are substituted; the actual Worker and `ctx.llm` facade/trust gate/message shaping/result builder execute. Network sockets are forbidden in the gateway seam. Host warm-up/background refresh and unrelated post-connect services are suppressed, not the gateway adapter lifecycle.
+
+Verified locally: scoped history reaches one isolated completion and `coach_respond`; later idle polling causes zero additional completions; shutdown cancels an in-flight second completion and prevents another publication; missing credentials connect safely without polling; arbitrary gateway outbound sends fail closed. Fresh CLI processes observe the gateway's live lock/mode and refuse foreground duplication and credential rotation. Unit suite: **17 passing**. Native CI installs the exact PR head before this gateway test.
+
+Limits: this synthetic public MCP seam is not the private Express/Mongo backend suite below and does not establish canonical app-level setup attribution. No paid/live provider response, OS systemd/launchd installation, active gateway restart, or active profile/customer calls were performed. Native gateway start/stop methods are exercised, not service-manager deployment. Parent independent review/merge remains required.
+
+## Historical foreground receipts (PR1)
+
 ## Verified interfaces
 
 Host: official NousResearch/hermes-agent `ee5b5ec21e576ccf9b941f9ff71330418415a5cb`, project version `0.21.0`, Python 3.11.15; inspected SDK files were unmodified. Public GitHub confirms that exact commit. Host transport dependency: `httpx 0.28.1`.

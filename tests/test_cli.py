@@ -6,6 +6,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 from test_settings import TOKEN
 
 class CliTests(unittest.TestCase):
@@ -19,8 +20,13 @@ class CliTests(unittest.TestCase):
             app = App(ctx, Path(tmp))
             self.assertEqual(app.status()['configuration'], 'setup-required')
             output = io.StringIO()
-            with redirect_stdout(output):
+            with redirect_stdout(output), patch('subprocess.run') as host_config:
                 app.configure(io.StringIO(TOKEN + '\n'))
+            host_config.assert_called_once()
+            self.assertEqual(host_config.call_args.args[0][-4:],
+                             ['config', 'set', 'platforms.katafit.enabled', 'true'])
+            self.assertEqual(host_config.call_args.kwargs['env']['HERMES_HOME'], tmp)
+            self.assertIn('hermes gateway restart', output.getvalue())
             self.assertNotIn(TOKEN, output.getvalue())
             status = app.status()
             self.assertEqual(status['configuration'], 'configured')

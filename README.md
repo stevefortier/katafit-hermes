@@ -4,25 +4,30 @@ The official Kata.fit native Hermes plugin connects your Hermes model to Kata.fi
 
 ## Install and configure
 
-Requires Python 3.11–3.13 on Linux or macOS and a Hermes build with `PluginContext.register_cli_command`, `set_config`, `state`, `spawn_task`, `on_unload`, and `llm.acomplete`. The verified compatibility target is NousResearch/hermes-agent commit **`ee5b5ec21e576ccf9b941f9ff71330418415a5cb`**, using host `httpx 0.28.1`. Windows is not supported in this first version (private permissions and process locking are POSIX).
+Requires Python 3.11–3.13 on Linux or macOS and a Hermes build with `PluginContext.register_platform`, `register_cli_command`, `set_config`, `state`, `spawn_task`, `on_unload`, and `llm.acomplete`. The verified compatibility target is NousResearch/hermes-agent commit **`ee5b5ec21e576ccf9b941f9ff71330418415a5cb`**, using host `httpx 0.28.1`. Windows is not supported in this first version (private permissions and process locking are POSIX).
 
 ```sh
 hermes plugins install stevefortier/katafit-hermes --enable
 hermes katafit configure
-hermes katafit run
+hermes gateway restart  # existing gateway service
+# No service yet: hermes gateway install, then hermes gateway start
 ```
 
-**Before this feature is merged**, default-branch installation does not contain the plugin. Reviewers must append `--ref <full-feature-commit-SHA>` to the install command. Hermes supports immutable full commit pins, not branch names or abbreviated hashes. There is no PyPI package, Hermes registry listing, or release publication.
+**Before this gateway follow-up is merged**, default-branch installation contains only the foreground worker from PR1. Reviewers must append `--ref <full-feature-commit-SHA>` to the install command. Hermes supports immutable full commit pins, not branch names or abbreviated hashes. There is no PyPI package, Hermes registry listing, or release publication.
 
 In Kata.fit's AI Coach settings (or Dojo settings, for the chief), create a scoped credential and paste it into the **hidden** configure prompt. No JSON editing, token argument, or absolute path is needed. For a secret manager, pipe the token to `hermes katafit configure --token-stdin`; do not place the token literally in shell history. The plugin validates the actual `rgn_coach_…` credential format and stores it in an owner-only file beneath the active Hermes profile. Non-secret settings use Hermes' atomic `ctx.set_config` API and preserve unrelated configuration.
 
-Keep `hermes katafit run` open in a dedicated terminal, or run that same command under your existing process supervisor. Ctrl-C/SIGTERM stops it. This is the plugin's native worker command, **not a gateway service install**. No active gateway restart or conversational prompt is needed. Stop the worker before replacing its credential, then run the command again. Installation without a credential succeeds; running without one reports setup required.
+Configure enables the actual host setting `platforms.katafit.enabled` using `hermes config set`; it does not silently restart a running gateway or disrupt other messaging platforms. Start/restart the **same profile's gateway** as shown above. The supported `ctx.register_platform` adapter starts polling in async `connect()` and cancels it in `disconnect()`. No dedicated Kata.fit terminal or conversational session is needed while the gateway service runs. Gateway stop/restart affects that profile's other messaging platforms too. Service installation depends on Hermes' normal OS supervisor support; without one, `hermes gateway run` is the host foreground alternative.
+
+**Credential replacement:** `hermes gateway stop` (or stop the diagnostic worker) → `hermes katafit configure` → `hermes gateway start`. Configure refuses rotation while either worker mode owns the lock. For diagnosis only, `hermes katafit run` runs in the foreground with Ctrl-C/SIGTERM cleanup; first stop the gateway worker. Installation without a credential succeeds. Gateway connect without one reports setup required and starts no polling/inference.
+
+Discovery, install, configure and status never start polling. The manifest stays `kind: standalone` so native CLI commands load eagerly; the platform adapter imports lazily and starts only when the gateway connects it. Arbitrary gateway `send_message`/cron delivery is rejected: Kata.fit is not a normal Hermes messaging channel.
 
 ```sh
 hermes katafit status
 ```
 
-Status never performs inference or contacts Kata.fit. It distinguishes setup required, configured, worker running/stopped, fresh connectivity, idle, working, backoff, auth rejection, and unknown/stale state. A profile-local OS lock prevents duplicate workers. A running worker or accepted credential is **not proof of a working Coach reply**: use **Test connection in Kata.fit**, which checks the exact persisted request, completion state, external attribution, and nonempty reply. The local status deliberately never claims that app-level verification.
+Status never performs inference or contacts Kata.fit. It includes resolved profile home and fresh gateway/foreground mode. It distinguishes setup required, configured, worker running/stopped, fresh connectivity, idle, working, backoff, auth rejection, and unknown/stale state. A profile-local OS lock prevents duplicate workers across gateway and foreground modes. Gateway adapter readiness means the poller started, not backend connectivity; only fresh plugin status can report the latter. A running worker or accepted credential is **not proof of a working Coach reply**: use **Test connection in Kata.fit**, which checks the exact persisted request, completion state, external attribution, and nonempty reply. The local status deliberately never claims that app-level verification.
 
 Use Hermes' normal `--profile`/`-p` selection consistently if you use named profiles. The plugin resolves `get_hermes_home()` at command execution and never reads other profiles.
 
@@ -47,4 +52,4 @@ python -m venv .venv
 
 Tests use synthetic credentials/context and never need production credentials. Native installation and backend seam verification receipts are documented in `docs/verification.md`. The real backend seam substitutes only model completion; it is not evidence of a paid/live provider response.
 
-SDK sources: [plugins guide](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins), [plugin LLM access](https://hermes-agent.nousresearch.com/docs/developer-guide/plugin-llm-access), [native plugin installer](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins). MIT licensed.
+SDK sources: [platform adapters](https://hermes-agent.nousresearch.com/docs/developer-guide/adding-platform-adapters), [plugins guide](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins), [plugin LLM access](https://hermes-agent.nousresearch.com/docs/developer-guide/plugin-llm-access), [native plugin installer](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins). MIT licensed.

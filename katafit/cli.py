@@ -1,4 +1,4 @@
-"""Native CLI lifecycle: explicit worker, no polling during plugin discovery."""
+"""Shared gateway/diagnostic worker ownership; no polling during discovery or setup."""
 import asyncio
 import fcntl
 import getpass
@@ -52,9 +52,19 @@ class App:
                     warnings.simplefilter('error', getpass.GetPassWarning)
                     value = getpass.getpass('Kata.fit one-time Coach credential (hidden): ')
             self.settings.configure(value)
+            # Use the supported host CLI, including managed-key policy and atomic persistence.
+            # Pin the child to this App's profile, not a later process-global HOME change.
+            import subprocess
+            subprocess.run([sys.executable, '-m', 'hermes_cli.main', 'config', 'set',
+                            'platforms.katafit.enabled', 'true'],
+                           env={**os.environ, 'HERMES_HOME': str(self.settings.directory.parent)},
+                           check=True, capture_output=True, timeout=30)
             self.ctx.state.set('worker', {})
         print('Credential saved privately for this Hermes profile. Connectivity is not yet verified.\n'
-              'Run: hermes katafit run\nThen use Test connection in Kata.fit to verify an attributed reply.')
+              'Gateway adapter enabled. Existing gateway: hermes gateway restart\n'
+              'No gateway service yet: hermes gateway install, then hermes gateway start\n'
+              'Use the same Hermes profile for every command. Configure never restarts it automatically.\n'
+              'Then use Test connection in Kata.fit to verify an attributed reply.')
 
     def status(self):
         configured = self.settings.token() is not None
@@ -67,20 +77,27 @@ class App:
                 running = True
         latest = self.ctx.state.get('worker', {}) if configured else {}
         fresh = running and 0 <= time.time() - latest.get('updated_at', 0) < 90
-        return {'configuration': 'configured' if configured else 'setup-required',
+        return {'profile_home': str(self.settings.directory.parent.resolve()),
+                'mode': latest.get('mode', 'unknown') if fresh else 'unknown',
+                'configuration': 'configured' if configured else 'setup-required',
                 'worker': 'running' if running else 'stopped',
                 'connectivity': latest.get('connectivity', 'unknown') if fresh else 'unknown',
                 'activity': latest.get('activity', 'unknown') if fresh else 'unknown',
                 'reply_verified': False,
                 'verification': 'Use Kata.fit Test connection: exact completed attributed request required.'}
 
-    async def run(self):
-        with self.worker_lock():
+    def start(self, *, mode):
+        """Acquire ownership synchronously before reporting a live worker."""
+        if self.task is not None:
+            raise RuntimeError('WORKER_ALREADY_RUNNING_STOP_BEFORE_CONFIGURE')
+        lock = self.worker_lock()
+        lock.__enter__()
+        try:
             token = self.settings.token()
             if token is None:
-                print('Setup required. Run: hermes katafit configure')
-                return
-            state = {'connectivity': 'unknown', 'activity': 'starting'}
+                lock.__exit__(None, None, None)
+                return False
+            state = {'connectivity': 'unknown', 'activity': 'starting', 'mode': mode}
             def on_state(value):
                 if value in ('connected', 'idle', 'working', 'reply-submitted'):
                     state['connectivity'] = 'connected'
@@ -90,19 +107,45 @@ class App:
                     state['connectivity'] = 'unknown'
                 state.update(activity=value, updated_at=time.time())
                 self.ctx.state.set('worker', dict(state))
+            on_state('starting')
             worker = Worker(token, self.ctx.llm.acomplete, on_state=on_state)
             self.task = self.ctx.spawn_task(worker.run(), name='katafit-coach-worker')
-            loop = asyncio.get_running_loop()
-            loop.add_signal_handler(signal.SIGTERM, self.task.cancel)
-            print('Kata.fit worker running. Keep this terminal open; Ctrl-C stops it.', flush=True)
+        except BaseException:
+            lock.__exit__(None, None, None)
+            raise
+        def finished(task):
             try:
-                await self.task
-            finally:
-                loop.remove_signal_handler(signal.SIGTERM)
-                self.task.cancel()
-                self.task = None
+                if not task.cancelled():
+                    task.exception()  # Consume without exposing private exception text.
                 self.ctx.state.set('worker', {'activity': 'stopped', 'connectivity': 'unknown',
-                                               'updated_at': time.time()})
+                                             'updated_at': time.time()})
+            finally:
+                self.task = None
+                lock.__exit__(None, None, None)
+        self.task.add_done_callback(finished)
+        return True
+
+    async def stop(self):
+        task = self.task
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    async def run(self):
+        if not self.start(mode='foreground'):
+            print('Setup required. Run: hermes katafit configure')
+            return
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGTERM, self.task.cancel)
+        print('Kata.fit diagnostic worker running. Ctrl-C stops it; do not also start the gateway.', flush=True)
+        try:
+            await self.task
+        finally:
+            loop.remove_signal_handler(signal.SIGTERM)
+            await self.stop()
 
     def unload(self):
         if self.task is not None:
@@ -131,4 +174,4 @@ def setup_parser(parser):
     configure = commands.add_parser('configure', help='Save your one-time credential with a hidden prompt')
     configure.add_argument('--token-stdin', action='store_true', help='Read credential from stdin, never argv')
     commands.add_parser('status', help='Report configuration and worker state; does not probe or call a model')
-    commands.add_parser('run', help='Run the persistent Coach worker until Ctrl-C; does not start a gateway')
+    commands.add_parser('run', help='Foreground diagnostic; stop the gateway worker first; Ctrl-C stops it')
