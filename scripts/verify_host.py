@@ -33,12 +33,46 @@ def main():
         before = run('katafit', 'status')
         assert 'setup-required' in before
         run('katafit', 'run')
+        run('config', 'set', 'display.skin', 'default')
         token = 'rgn_coach_' + 'a' * 24 + '_' + 'b' * 43
         run('katafit', 'configure', '--token-stdin', input=token + '\n')
+        # Real hidden prompt through a PTY: do not print entered data on failure.
+        import pty
+        import select
+        import time
+        master, slave = pty.openpty()
+        child = subprocess.Popen(command + ['katafit', 'configure'], cwd=tmp, env=env,
+                                 stdin=slave, stdout=slave, stderr=slave)
+        os.close(slave)
+        transcript = bytearray()
+        sent = False
+        try:
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                if select.select([master], [], [], 0.1)[0]:
+                    try:
+                        transcript.extend(os.read(master, 8192))
+                    except OSError:
+                        break
+                if not sent and b'(hidden): ' in transcript:
+                    os.write(master, (token + '\n').encode())
+                    sent = True
+                if child.poll() is not None:
+                    break
+            assert child.wait(timeout=5) == 0 and sent
+            assert token.encode() not in transcript, 'Hidden prompt echoed credential'
+            assert b'Credential saved privately' in transcript
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+            os.close(master)
+        print('VERIFIED: actual PTY hidden prompt did not echo credential')
         after = run('katafit', 'status')
         assert 'configured' in after and 'stopped' in after and 'unknown' in after
         config = (home / 'profile' / 'config.yaml').read_text()
         assert token not in config
+        assert 'skin: default' in config and 'katafit' in config
         assert (home / 'profile' / 'katafit-private' / 'credential').stat().st_mode & 0o777 == 0o600
         print('VERIFIED: pinned GitHub native install, load, CLI, setup-required, configure, private credential, status')
 

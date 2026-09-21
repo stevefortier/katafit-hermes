@@ -1,4 +1,4 @@
-import importlib
+import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +7,28 @@ from types import SimpleNamespace
 TOKEN = 'rgn_coach_' + 'a' * 24 + '_' + 'b' * 43
 
 class SettingsTests(unittest.TestCase):
+    def test_refuse_symlinked_directory_or_public_credential(self):
+        from katafit.settings import Settings
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            victim = root / 'victim'
+            victim.mkdir(mode=0o700)
+            settings = Settings(SimpleNamespace(set_config=lambda *args:None), root)
+            settings.directory.symlink_to(victim, target_is_directory=True)
+            with self.assertRaises(OSError):
+                settings.configure(TOKEN)
+            self.assertFalse((victim / 'credential').exists())
+            settings.directory.unlink()
+            settings.configure(TOKEN)
+            credential = settings.directory / 'credential'
+            credential.chmod(0o644)
+            with self.assertRaises(PermissionError):
+                settings.token()
+            credential.unlink()
+            credential.symlink_to(victim / 'credential')
+            with self.assertRaises(OSError):
+                settings.token()
+
     def test_private_profile_credential_and_safe_config(self):
         self.assertIsNotNone(importlib.util.find_spec('katafit'), 'native plugin package is missing')
         from katafit.settings import Settings

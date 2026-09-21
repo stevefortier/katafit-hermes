@@ -4,7 +4,7 @@ The official Kata.fit native Hermes plugin connects your Hermes model to Kata.fi
 
 ## Install and configure
 
-Requires Python 3.11+ on Linux or macOS and a Hermes build with `PluginContext.register_cli_command`, `set_config`, `state`, `spawn_task`, `on_unload`, and `llm.acomplete`. The verified compatibility target is NousResearch/hermes-agent commit **`ee5b5ec21e576ccf9b941f9ff71330418415a5cb`**, using host `httpx 0.28.1`. Windows is not supported in this first version (private permissions and process locking are POSIX).
+Requires Python 3.11–3.13 on Linux or macOS and a Hermes build with `PluginContext.register_cli_command`, `set_config`, `state`, `spawn_task`, `on_unload`, and `llm.acomplete`. The verified compatibility target is NousResearch/hermes-agent commit **`ee5b5ec21e576ccf9b941f9ff71330418415a5cb`**, using host `httpx 0.28.1`. Windows is not supported in this first version (private permissions and process locking are POSIX).
 
 ```sh
 hermes plugins install stevefortier/katafit-hermes --enable

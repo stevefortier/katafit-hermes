@@ -104,6 +104,25 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.1)
         self.assertNotIn('coach_respond', self.calls)
 
+    async def test_stale_generation_scope_and_attachments_are_rejected(self):
+        for patch in ({'lease_generation': 1}, {'scope': 'personal'}, {'attachment_count': 1}):
+            worker, client = self.fixture(context_patch=lambda c:c['request'].update(patch))
+            async with client:
+                with self.assertRaisesRegex(WorkerError, 'CONTEXT_REJECTED'):
+                    await worker.poll_once()
+            self.assertEqual(self.prompts, [])
+
+    async def test_empty_oversize_and_credential_outputs_are_rejected(self):
+        for text in ('', ' ', 'x' * 8001, TOKEN):
+            worker, client = self.fixture()
+            async def complete(**kw):
+                return SimpleNamespace(text=text)
+            worker.complete = complete
+            async with client:
+                with self.assertRaisesRegex(WorkerError, 'OUTPUT_REJECTED'):
+                    await worker.poll_once()
+            self.assertNotIn('coach_respond', self.calls)
+
     async def test_cancellation_never_publishes_or_fails(self):
         worker, client = self.fixture()
         entered = asyncio.Event()
