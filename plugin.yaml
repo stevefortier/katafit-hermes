@@ -1,4 +1,4 @@
-manifest_version: 2
+manifest_version: 1
 name: katafit
 version: "0.1.0"
 description: Native scoped Kata.fit Coach worker with host-owned Hermes inference
