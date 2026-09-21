@@ -11,7 +11,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--hermes-source', required=True, type=Path)
     parser.add_argument('--python', required=True)
-    parser.add_argument('--revision', required=True)
+    parser.add_argument('--revision')
+    parser.add_argument('--local-source', type=Path, help='Local pre-push discovery test; not installer proof')
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='katafit-hermes-host-') as tmp:
         home = Path(tmp)
@@ -27,7 +28,14 @@ def main():
                 print(result.stderr)
                 raise RuntimeError('Native host command failed')
             return result.stdout
-        run('plugins', 'install', 'stevefortier/katafit-hermes', '--ref', args.revision, '--enable')
+        if args.local_source:
+            import shutil
+            shutil.copytree(args.local_source, home / 'profile/plugins/katafit',
+                            ignore=shutil.ignore_patterns('.git', '__pycache__', '.venv'))
+            run('plugins', 'enable', 'katafit')
+        else:
+            assert args.revision, '--revision required for GitHub artifact verification'
+            run('plugins', 'install', 'stevefortier/katafit-hermes', '--ref', args.revision, '--enable')
         run('plugins', 'list', '--user', '--plain')
         run('katafit', '--help')
         before = run('katafit', 'status')
@@ -74,7 +82,14 @@ def main():
         assert token not in config
         assert 'skin: default' in config and 'katafit' in config
         assert (home / 'profile' / 'katafit-private' / 'credential').stat().st_mode & 0o777 == 0o600
-        print('VERIFIED: pinned GitHub native install, load, CLI, setup-required, configure, private credential, status')
+        print('VERIFIED: native CLI, setup-required, configure, private credential, status')
+        result = subprocess.run([args.python, str(Path(__file__).with_name('verify_gateway.py').resolve()),
+                                 str(args.hermes_source)], cwd=tmp, env=env, text=True,
+                                capture_output=True, timeout=90)
+        print(result.stdout)
+        if result.returncode:
+            print(result.stderr)
+            raise RuntimeError('Native gateway verification failed')
 
 
 if __name__ == '__main__':

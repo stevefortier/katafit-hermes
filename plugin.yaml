@@ -1,7 +1,8 @@
 manifest_version: 1
 name: katafit
-version: "0.1.0"
-description: Native scoped Kata.fit Coach worker with host-owned Hermes inference
+version: "0.2.0"
+description: Gateway-managed Kata.fit Coach adapter with isolated host-owned inference
+# Eager CLI registration is needed for configure/status; adapter imports stay lazy.
 kind: standalone
 author: Kata.fit
 license: MIT
