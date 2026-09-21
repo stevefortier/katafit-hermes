@@ -1,0 +1,17 @@
+manifest_version: 1
+name: katafit
+version: "0.1.0"
+description: Native scoped Kata.fit Coach worker with host-owned Hermes inference
+kind: standalone
+author: Kata.fit
+license: MIT
+homepage: https://github.com/stevefortier/katafit-hermes
+provides_tools: []
+requires_env: []
+python_dependencies:
+  - "httpx>=0.28.1,<0.29"
+config_schema:
+  configured:
+    type: bool
+    default: false
+    description: Credential has been saved; not proof of connectivity or a verified reply.
